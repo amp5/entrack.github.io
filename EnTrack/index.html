@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<!--[if lt IE 7]>
+<html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>
+<html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>
+<html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]><!-->
+<html class="no-js"> <!--<![endif]-->
+  <head>
+    <link rel="stylesheet" type="text/css" href="style.css">
+    
+   
+    <!-- WhereBus script files -->
+    <script type="text/javascript"
+            src="https://maps.googleapis.com/maps/api/js?key=AIzaSyA6U2ExB8yLDc7RiGPYK3C3yIzDPpyFJE0&sensor=false"></script>
+    <script src="https://cdn.firebase.com/js/client/2.2.7/firebase.js"></script>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/3.9.3/lodash.js"></script>
+   
+
+    <!-- Custom CSS and JV -->
+    <script src="maps.js"></script>
+
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="description" content="Firebase Open Data Sets examples - Transit">
+    <meta name="viewport" id="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="all">
+
+
+
+<!-- realtime data JS -->
+    <script>
+      /**
+       * transit.js  -  powering the transit open data example
+      /* global Firebase, google, $, _ */
+      var transit = {
+        people: {},
+        map: undefined,
+        ref: undefined,
+        $container: undefined,
+        $system: undefined,
+        /**
+         init - initialize the module
+         **/
+        init: function () {
+          this.$container = $(".transit-opendata-example");
+          if (this.$container.length) {
+            this.$system = $("#system-selector");
+            // 
+            // 
+            // will need to change this to our database!
+            // 
+            // 
+            this.ref = new Firebase("https://publicdata-transit.firebaseio.com/");
+            this.animatePeople();
+            this.populateMap();
+          }
+        },
+        /**
+         animatePeople - attach method to Google Maps Marker prototype to animate movement on data change
+         **/
+        animatePeople: function () {
+          var self = this;
+          google.maps.Marker.prototype.animatedMoveTo = function (toLat, toLng) {
+            var fromLat = this.getPosition().lat();
+            var fromLng = this.getPosition().lng();
+            var frames = [];
+            var isLocationSame = (self._areFloatsAlmostEqual(fromLat, toLat) && self._areFloatsAlmostEqual(fromLng, toLng));
+            var currentLat = 0.0;
+            var currentLng = 0.0;
+            if (isLocationSame) {
+              return;
+            }
+            // CREATE 200 ANIMATION FRAMES FOR BUS
+            for (var percent = 0; percent < 1; percent += 0.005) {
+              currentLat = fromLat + percent * (toLat - fromLat);
+              currentLng = fromLng + percent * (toLng - fromLng);
+              frames.push(new google.maps.LatLng(currentLat, currentLng));
+            }
+            self.movePeople(this, frames, 0, 25);
+          };
+        },
+        /**
+         * movePeople - display frame by frame the person's movement on the map
+         */
+        movePeople: function (marker, latLngs, index, wait) {
+          marker.setPosition(latLngs[index]);
+          if (index !== latLngs.length - 1) {
+            setTimeout(function () {
+              this.movePeople(marker, latLngs, index + 1, wait);
+            }.bind(this), wait);
+          }
+        },
+        /**
+         * populateMap - listen for changes in UI and listen to transit firebase
+         **/
+        populateMap: function () {
+          var self = this;
+          var systemRef;
+          var systemData;
+          _.forEach(this.transitSystems, function (systemData, sysId) {
+            this.$system.append($("<option value='" + sysId + "'>" + systemData.name + "</option>"));
+          }, this);
+          this.$system.change(function () {
+            var mapOptions;
+            var system = Number(self.$system.val());
+            var name = self.transitSystems[system].tag;
+            if (systemRef) {
+              systemRef.off();
+            }
+            mapOptions = {
+              center: new google.maps.LatLng(
+                  self.transitSystems[system].lat,
+                  self.transitSystems[system].lon
+              ),
+              zoom: self.transitSystems[system].zoom || 12,
+              mapTypeId: google.maps.MapTypeId.ROADMAP
+            };
+            self.map = new google.maps.Map(document.getElementById("map-canvas"), mapOptions);
+            systemRef = self.ref.child(name + "/vehicles").limitToLast(200);
+            self.createPeopleListeners(systemRef);
+          });
+          this.$system.change();
+        },
+        /**
+         * newPeople
+         *
+         * create a new people marker on Google Maps element
+         * @param {Object} people - contains information about a transit system people
+         * @param {String} userId - the user's ID in Firebase
+         */
+        newPeople: function (people, userId) {
+          var peopleLatLng = new google.maps.LatLng(people.lat, people.lon);
+          // CAPITALIZE THE FIRST LETTER OF BUS ROUTE STRING (if applicable, e.g., for the Brooklyn "B61" people)
+          var peopleRouteHead = people.routeTag.toString()[0].toUpperCase();
+          var peopleRouteTail = people.routeTag.toString().slice(1);
+          var tag = peopleRouteHead + peopleRouteTail;
+          var marker = new google.maps.Marker({
+            icon: "https://chart.googleapis.com/chart?chst=d_map_pin_icon&chld=wc-female|00ADEF|eee",
+            position: peopleLatLng,
+            map: this.map
+          });
+          this.people[userId] = marker;
+        },
+        /**
+         * createPeopleListeners
+         *
+         * update the map when people data changes
+         * @param {Firebase Ref} systemRef - reference to the vehicles(?) node under a transit system Firebase
+         */
+        createPeopleListeners: function (systemRef) {
+          var self = this;
+          systemRef.once("value", function (snapshot) {
+            snapshot.forEach(function (people) {
+              self.newPeople(people.val(), people.key());
+            });
+          });
+          systemRef.on("child_changed", function (snapshot) {
+            var peopleMarker = self.people[snapshot.key()];
+            if (peopleMarker) {
+              peopleMarker.animatedMoveTo(snapshot.val().lat, snapshot.val().lon);
+            } else {
+              self.newPeople(snapshot.val(), snapshot.key());
+            }
+          });
+          systemRef.on("child_removed", function (snapshot) {
+            var peopleMarker = self.people[snapshot.key()];
+            if (peopleMarker) {
+              peopleMarker.setMap(null);
+              delete self.people[snapshot.key()];
+            }
+          });
+        },
+        /**
+         * _areFloatsAlmostEqual
+         *
+         * test to see if two floats in JS are functionally equal
+         * @param {Number} f1 - a number to compare
+         * @param {Number} f2 - a number to compare
+         * @param {Boolean} - whether the two floats are basically equal
+         */
+        _areFloatsAlmostEqual: function (f1, f2) {
+          return (Math.abs(f1 - f2) < 0.000001);
+        },
+        /**
+         * transitSystem -  listing of all transit systems in example
+         * TODO: Need to add in user's geolocation!
+         */
+        transitSystems: [
+          {
+            lat: 37.7789,
+            lon: -122.3917,
+            tag: 'sf-muni',
+            city: 'San Francisco',
+            state: 'CA',
+            name: 'SF MUNI',
+            zoom: 15
+          }]
+      };
+      $(document).ready(function () {
+        transit.init();
+      });
+
+    </script>
+
+
+  </head>
+  <body>
+
+   <!--  <div id="map-canvas"></div> -->
+
+    <div class="transit-opendata-example">
+      <div class="transit-map-canvas" data-example="transit" id="map-canvas"></div>
+      <select id="system-selector"></select>
+    </div>
+
+    
+
+    <p><button onclick="geoFindMe()">Show my location</button></p>
+    <div id="out"></div>
+
+    <!-- chat-buffer = geodata-store -->
+    <div id="geodate-store">
+    </div>
+
+
+  </body>
+</html>

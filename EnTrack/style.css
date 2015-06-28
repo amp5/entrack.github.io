@@ -1,0 +1,35 @@
+#map-canvas {
+        width: 500px;
+        height: 400px;
+         background-color: #CCC;
+      }
+
+.gm-style label {
+      width: auto;
+      display: inline;
+    }
+    .google-maps img, .gm-style img {
+      max-width: none !important;
+      max-height: none !important;
+    }
+    #map-canvas {
+      margin: 0;
+      width: 50%;
+      height: 50%;
+    }
+    .transit-opendata-example {
+      height: 100%;
+      width: 100%;
+    }
+    #system-selector {
+      position: fixed;
+      top: 30px;
+      right: 10px;
+    }
+    html, body {
+      height: 100%;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }

@@ -1,0 +1,10 @@
+{
+  "firebase": "entrack",
+  "public": ".",
+  "ignore": [
+    "firebase.json",
+    "**/node_modules/**",
+    "env",
+    "where-is-my-bus"
+  ]
+}
